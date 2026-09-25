@@ -1,96 +1,92 @@
 import { useState } from "react";
-import {
-  Check,
-  Clipboard,
-  Download,
-  Eraser,
-  QrCode,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
-import QRCode from "qrcode";
+import { Check, Clipboard, Download, Eraser, ShieldCheck } from "lucide-react";
 import SiteFooter from "./components/SiteFooter";
 import SiteHeader from "./components/SiteHeader";
 
 type Status = { kind: "idle" | "success" | "error"; message: string };
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error && error.message) return error.message;
-  return "This content could not be encoded as a QR code.";
+function encodeBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  bytes.forEach((byte) => (binary += String.fromCharCode(byte)));
+  return btoa(binary);
+}
+
+function decodeBase64(base64: string): string {
+  const binary = atob(base64.replace(/\s/g, ""));
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 export default function App() {
   const [input, setInput] = useState("");
-  const [qrDataUrl, setQrDataUrl] = useState("");
-  const [qrSvg, setQrSvg] = useState("");
+  const [output, setOutput] = useState("");
+  const [mode, setMode] = useState<"encode" | "decode">("encode");
   const [status, setStatus] = useState<Status>({
     kind: "idle",
-    message: "Ready to generate",
+    message: "Ready to encode",
   });
 
-  const generateQr = async () => {
+  const processBase64 = () => {
     if (!input.trim()) {
-      setQrDataUrl("");
-      setQrSvg("");
-      setStatus({ kind: "error", message: "Enter some text or a URL first." });
-      return;
-    }
-
-    try {
-      const options = {
-        errorCorrectionLevel: "M" as const,
-        margin: 4,
-        width: 1024,
-      };
-      const [dataUrl, svg] = await Promise.all([
-        QRCode.toDataURL(input, options),
-        QRCode.toString(input, { ...options, type: "svg" }),
-      ]);
-      setQrDataUrl(dataUrl);
-      setQrSvg(svg);
-      setStatus({
-        kind: "success",
-        message: "QR code generated successfully.",
-      });
-    } catch (error) {
-      setQrDataUrl("");
-      setQrSvg("");
+      setOutput("");
       setStatus({
         kind: "error",
-        message: `Could not generate a QR code. ${getErrorMessage(error)}`,
+        message:
+          mode === "encode"
+            ? "Enter some text to encode first."
+            : "Enter Base64 content to decode first.",
+      });
+      return;
+    }
+    try {
+      const result =
+        mode === "encode" ? encodeBase64(input) : decodeBase64(input);
+      setOutput(result);
+      setStatus({
+        kind: "success",
+        message:
+          mode === "encode"
+            ? "Text encoded successfully."
+            : "Base64 decoded successfully.",
+      });
+    } catch {
+      setOutput("");
+      setStatus({
+        kind: "error",
+        message: "Invalid Base64 input. Please check the value and try again.",
       });
     }
   };
 
-  const copyContent = async () => {
-    if (!input) return;
+  const copyOutput = async () => {
+    if (!output) return;
     try {
-      await navigator.clipboard.writeText(input);
-      setStatus({ kind: "success", message: "Content copied to clipboard." });
+      await navigator.clipboard.writeText(output);
+      setStatus({ kind: "success", message: "Result copied to clipboard." });
     } catch {
       setStatus({
         kind: "error",
         message:
-          "Clipboard access was unavailable. Select and copy the content manually.",
+          "Clipboard access was unavailable. Select and copy the result manually.",
       });
     }
   };
 
-  const downloadFile = (content: string, filename: string, type: string) => {
+  const downloadOutput = () => {
+    if (!output) return;
     try {
-      const blobContent =
-        type === "image/png"
-          ? Uint8Array.from(atob(content.split(",")[1]), (character) =>
-              character.charCodeAt(0),
-            )
-          : content;
-      const url = URL.createObjectURL(new Blob([blobContent], { type }));
+      const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = filename;
+      link.download =
+        mode === "encode" ? "mariutil-base64.txt" : "mariutil-decoded.txt";
+      document.body.appendChild(link);
       link.click();
+      link.remove();
       URL.revokeObjectURL(url);
-      setStatus({ kind: "success", message: `${filename} downloaded.` });
+      setStatus({ kind: "success", message: "Result downloaded." });
     } catch {
       setStatus({
         kind: "error",
@@ -101,9 +97,21 @@ export default function App() {
 
   const clear = () => {
     setInput("");
-    setQrDataUrl("");
-    setQrSvg("");
-    setStatus({ kind: "idle", message: "Ready to generate" });
+    setOutput("");
+    setStatus({
+      kind: "idle",
+      message: mode === "encode" ? "Ready to encode" : "Ready to decode",
+    });
+  };
+
+  const switchMode = (nextMode: "encode" | "decode") => {
+    setMode(nextMode);
+    setInput("");
+    setOutput("");
+    setStatus({
+      kind: "idle",
+      message: nextMode === "encode" ? "Ready to encode" : "Ready to decode",
+    });
   };
 
   return (
@@ -114,95 +122,134 @@ export default function App() {
           <div className="command-header">
             <div>
               <p className="eyebrow">Developer utility</p>
-              <h1 id="page-title">QR Code Generator</h1>
-              <p className="intro">Create a QR code from any URL or text.</p>
+              <h1 id="page-title">Base64 Encoder &amp; Decoder</h1>
+              <p className="intro">
+                Encode text to Base64 or decode Base64 to text online.
+              </p>
             </div>
             <div className="privacy-note">
-              <ShieldCheck size={16} aria-hidden="true" /> Runs locally in your
-              browser. Your content is never uploaded.
+              <ShieldCheck size={22} aria-hidden="true" />
+              <div>
+                <strong>100% Private</strong>
+                <span>Your data never leaves your browser.</span>
+              </div>
             </div>
           </div>
 
-          <section className="generator-panel" aria-label="QR code generator">
-            <label className="input-label" htmlFor="qr-content">
-              Content
+          <section
+            className="generator-panel"
+            aria-label="Base64 encoder and decoder"
+          >
+            <div
+              className="mode-switch"
+              role="tablist"
+              aria-label="Base64 mode"
+            >
+              <button
+                className={`button ${mode === "encode" ? "primary" : ""}`}
+                type="button"
+                onClick={() => switchMode("encode")}
+                role="tab"
+                aria-selected={mode === "encode"}
+              >
+                Encode
+              </button>
+              <button
+                className={`button ${mode === "decode" ? "primary" : ""}`}
+                type="button"
+                onClick={() => switchMode("decode")}
+                role="tab"
+                aria-selected={mode === "decode"}
+              >
+                Decode
+              </button>
+            </div>
+
+            <label className="input-label" htmlFor="base64-input">
+              {mode === "encode" ? "Text to encode" : "Base64 to decode"}
             </label>
             <textarea
-              id="qr-content"
+              id="base64-input"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Enter URL or text to generate QR code..."
-              aria-describedby="input-help"
+              placeholder={
+                mode === "encode"
+                  ? "Enter text to encode..."
+                  : "Enter Base64 content to decode..."
+              }
               spellCheck="false"
             />
+
             <div className="input-footer">
-              <span id="input-help">
-                URLs, plain text, phone numbers, and email text are supported.
+              <span>
+                {mode === "encode"
+                  ? "UTF-8 text is supported, including Unicode and emojis."
+                  : "Whitespace is ignored while decoding."}
               </span>
               <span>{input.length.toLocaleString()} characters</span>
             </div>
+
             <button
               className="button primary generate-button"
               type="button"
-              onClick={() => void generateQr()}
+              onClick={processBase64}
             >
-              <Sparkles size={16} aria-hidden="true" /> Generate QR Code
+              {mode === "encode" ? "Encode to Base64" : "Decode Base64"}
             </button>
           </section>
 
           <section
-            className={`preview-panel ${qrDataUrl ? "has-qr" : ""}`}
-            aria-labelledby="preview-title"
+            className={`preview-panel ${output ? "has-output" : ""}`}
+            aria-labelledby="output-title"
           >
             <div className="panel-header">
               <div>
-                <span className="panel-label" id="preview-title">
-                  Preview
+                <span className="panel-label" id="output-title">
+                  {mode === "encode" ? "Base64 Output" : "Decoded Text"}
                 </span>
-                {qrDataUrl && <span className="panel-meta">Ready to scan</span>}
+                {output && (
+                  <span className="panel-meta">
+                    {output.length.toLocaleString()} characters
+                  </span>
+                )}
               </div>
-              {qrDataUrl && (
+              {output && (
                 <Check
                   size={18}
                   className="success-icon"
-                  aria-label="QR code ready"
+                  aria-label="Result ready"
                 />
               )}
             </div>
-            <div className="qr-stage">
-              {qrDataUrl ? (
-                <img
-                  className="qr-image"
-                  src={qrDataUrl}
-                  alt={`QR code for ${input.slice(0, 80)}`}
-                />
-              ) : (
-                <div className="empty-output">
-                  <QrCode size={42} strokeWidth={1.4} aria-hidden="true" />
-                  <strong>Your QR code will appear here</strong>
-                  <span>Enter content above, then generate your code.</span>
-                </div>
-              )}
-            </div>
-            {qrDataUrl && (
-              <div className="download-actions" aria-label="Download QR code">
+
+            <textarea
+              className="output-textarea"
+              value={output}
+              readOnly
+              placeholder={
+                mode === "encode"
+                  ? "Your Base64 output will appear here..."
+                  : "Your decoded text will appear here..."
+              }
+              spellCheck="false"
+              aria-label="Base64 result"
+            />
+
+            {output && (
+              <div className="download-actions" aria-label="Result actions">
                 <button
                   className="button"
                   type="button"
-                  onClick={() =>
-                    downloadFile(qrDataUrl, "mariutil-qr-code.png", "image/png")
-                  }
+                  onClick={() => void copyOutput()}
                 >
-                  <Download size={16} aria-hidden="true" /> Download PNG
+                  <Clipboard size={16} aria-hidden="true" /> Copy
                 </button>
                 <button
                   className="button"
                   type="button"
-                  onClick={() =>
-                    downloadFile(qrSvg, "mariutil-qr-code.svg", "image/svg+xml")
-                  }
+                  onClick={downloadOutput}
                 >
-                  <Download size={16} aria-hidden="true" /> Download SVG
+                  <Download size={16} aria-hidden="true" /> Download
                 </button>
               </div>
             )}
@@ -212,50 +259,86 @@ export default function App() {
             <button
               className="button"
               type="button"
-              onClick={() => void copyContent()}
-              disabled={!input}
+              onClick={() => void copyOutput()}
+              disabled={!output}
             >
-              <Clipboard size={16} aria-hidden="true" /> Copy Content
+              <Clipboard size={16} aria-hidden="true" /> Copy Result
             </button>
             <button
               className="button"
               type="button"
               onClick={clear}
-              disabled={!input && !qrDataUrl}
+              disabled={!input && !output}
             >
               <Eraser size={16} aria-hidden="true" /> Clear
             </button>
           </div>
+
           <div
             className={`status ${status.kind}`}
             role="status"
             aria-live="polite"
           >
-            <span aria-hidden="true" />
-            {status.message}
+            <span aria-hidden="true" /> {status.message}
           </div>
 
           <section className="tool-details" aria-labelledby="about-title">
             <div>
               <p className="eyebrow">About this tool</p>
               <h2 id="about-title">
-                A simple QR code generator for everyday sharing.
+                A fast and secure Base64 Encoder &amp; Decoder.
               </h2>
             </div>
             <div className="tool-details-copy">
               <p>
-                A QR code is a compact, scannable pattern that stores
-                information such as a website address, a note, or contact text.
-                Point a phone camera at the code to open or read its content.
+                Encode text into Base64 or decode Base64 back into readable
+                text. The tool supports UTF-8 content, including multilingual
+                text and emojis.
               </p>
               <p>
-                Paste any supported content into the field, then choose Generate
-                QR Code. You can download a high-resolution PNG for sharing or
-                an SVG for crisp scaling in design files.
+                Everything runs directly in your browser. Your text is never
+                uploaded to a server, making this tool useful for encoding and
+                decoding sensitive development data locally.
               </p>
               <p>
-                This generator works entirely in your browser. Your content is
-                encoded on your device and is never uploaded to a server.
+                Use Encode to convert text into Base64, or Decode to convert a
+                valid Base64 string back into its original text.
+              </p>
+              <p>
+                Base64 is commonly used when binary data or text needs to be
+                represented using a text-friendly format. It is frequently
+                encountered in applications involving JSON, XML, MIME data,
+                APIs, data URLs, authentication headers, and other text-based
+                data formats.
+              </p>
+
+              <p>
+                <em>
+                  <strong>Note:</strong> Base64 is an encoding format, not
+                  encryption. It does not protect data from being read.
+                </em>
+              </p>
+              <h3>How Base64 Encoding Works</h3>
+              <p>
+                Base64 is a generic term for conversion schemes that represent
+                data using 64 printable ASCII characters (A-Z, a-z, 0-9, +, and
+                /). It is commonly used to safely transport binary or text
+                payloads inside formats like JSON, XML, or MIME-based emails
+                without risk of corruption during transit.
+              </p>
+              <h3>Frequently Asked Questions</h3>
+              <p>
+                <strong>Q: Is my data uploaded to any server?</strong>
+                <br />
+                A: No. All encoding and decoding operations happen 100% locally
+                within your browser's JavaScript environment for absolute
+                privacy.
+              </p>
+              <p>
+                <strong>Q: Can I encode emojis and special characters?</strong>
+                <br />
+                A: Yes. Full UTF-8 support is built-in, letting you handle
+                unicode characters, symbols, and emojis effortlessly.
               </p>
             </div>
           </section>
